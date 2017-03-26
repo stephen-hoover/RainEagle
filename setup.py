@@ -32,7 +32,7 @@ setup(
     description='Python Class for utilizing the Rainforest Automation Eagle ( RFA-Z109 ) socket API.',
     download_url='https://github.com/evilpete/RainEagle/archive/0.1.8.tar.gz',
     long_description=open('README.md').read(),
-    cmdclass = { 'install_scripts': install_scripts_and_symlinks }
+    cmdclass={'install_scripts': install_scripts_and_symlinks}
 )
 
 

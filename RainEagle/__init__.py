@@ -1,7 +1,7 @@
 """Simple class for talking to The EAGLE gateway ( RFA-Z109 ) from rainforest automation
 
 """
-
+from __future__ import print_function, absolute_import
 
 import sys
 if sys.hexversion < 0x20703f0 :
@@ -14,8 +14,7 @@ __copyright__ = "Copyright (C) 2014 Peter Shipley"
 __license__ = "BSD"
 
 
-import EagleClass
-from EagleClass import Eagle, RainEagleResponseError, to_epoch_1970, to_epoch_2000
+from .EagleClass import Eagle, RainEagleResponseError, to_epoch_1970, to_epoch_2000
 #from RainEagle.EagleClass import Eagle
 
 __all__ = ['Eagle', 'RainEagleResponseError', 'to_epoch_1970', 'to_epoch_2000']

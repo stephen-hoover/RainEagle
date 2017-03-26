@@ -1,3 +1,4 @@
+from __future__ import print_function, absolute_import
 
 __author__ = 'Peter Shipley <peter.shipley@gmail.com>'
 __copyright__ = "Copyright (C) 2014 Peter Shipley"
@@ -9,11 +10,11 @@ import sys
 import os
 import time
 import xml.etree.ElementTree as ET
-import urllib
-import urllib2
+from urllib.request import Request
+from urllib.request import urlopen
 import base64
 from math import floor
-from urlparse import urlparse
+from urllib.parse import urlparse
 import json
 from warnings import warn
 from distutils.version import LooseVersion
@@ -41,7 +42,7 @@ def to_epoch_2000(t) :
         to unix's epoch of 1970
         offset in seconds from "Jan 1 00:00:00 2000"
     """
-    if isinstance(t, time.struct_time) :
+    if isinstance(t, time.struct_time):
         t = time.mktime(t)
     return t - 946684800
 
@@ -51,12 +52,12 @@ def to_epoch_1970(t) :
         offset in seconds from "Jan 1 00:00:00 2000"
         to unix's epoch of 1970
     """
-    if isinstance(t, (int, long, float)) :
+    if isinstance(t, (int, float)) :
         return t + 946684800
-    if isinstance(t, str) and t.startswith('0x') :
-        return 946684800 + int(t, 16)
+    if isinstance(t, str) and t.startswith('0x'):
+        return 946684800 + int(t, base=16)
 
-def _et2d(et) :
+def _et2d(et):
 
     """ Etree to Dict
 
@@ -102,12 +103,12 @@ def _et2d(et) :
 
 def _twos_comp(val, bits=32):
     """compute the 2's compliment of int value val"""
-    if( (val&(1<<(bits-1))) != 0 ):
-        val = val - (1<<bits)
+    if (val & (1 << (bits-1))) != 0:
+        val = val - (1 << bits)
     return val
 
 
-def _tohex(n, width=8) :
+def _tohex(n, width=8):
     """
         convert arg to string with hex representation if possible
 
@@ -115,7 +116,7 @@ def _tohex(n, width=8) :
 
         use int class to convert whatever is handed to us
     """
-    if isinstance(n, str) and n.startswith('0x') :
+    if isinstance(n, str) and n.startswith('0x'):
         return(n)
 
     i = int(n)
@@ -130,11 +131,15 @@ def _tohex(n, width=8) :
     if i < 0 :
         i += 0x100000000
 
-    return  "{:#0{width}x}".format(int(i), width=width)
+    return "{:#0{width}x}".format(int(i), width=width)
+
+EAGLE_PORT = os.environ.get('EAGLE_PORT', 5002)
+EAGLE_ADDR = os.environ.get('EAGLE_ADDR')
+EAGLE_PASS = os.environ.get('EAGLE_LOCAL_PASSWORD')
+EAGLE_USER = os.environ.get('EAGLE_LOCAL_USERNAME')
 
 
-#
-class Eagle(object) :
+class Eagle:
     """
         Class for talking to Rainforest Automation EAGLE (RFA-Z109)
 
@@ -142,60 +147,60 @@ class Eagle(object) :
             debug       print debug messages if true
             addr        address of device
             port        port on device (default 5002)
-            getmac      connect to device at start up and get macid (default true)
+            macid       Meter MAC address; will determine from device if not provided
             password    Password for HTTP Authentication
             username    Username for HTTP Authentication
             timeout     TCP socket timeout
 
         Currently there is very little error handling ( if any at all )
     """
-    def __init__(self, **kwargs):
+    def __init__(self, addr=EAGLE_ADDR, username=EAGLE_USER,
+                 password=EAGLE_PASS, port=EAGLE_PORT, debug=False,
+                 checkfirmware=True, macid=None, timeout=10):
 
-        self.username = kwargs.get("username", 0)
-        self.password = kwargs.get("password", 0)
-        
-        self.debug = kwargs.get("debug", 0)
+        self.username = username
+        self.password = password
+
+        self.debug = debug
 
         if self.debug :
-            print self.__class__.__name__, __name__
-        self.checkfw = kwargs.get("checkfirmware", True)
-        self.addr = kwargs.get("addr", os.getenv('EAGLE_ADDR', None))
-        self.port = kwargs.get("port", os.getenv('EAGLE_PORT', 5002))
-        self.mac = kwargs.get("mac", None)
-        self.timeout = kwargs.get("timeout", 10)
+            print(self.__class__.__name__, __name__)
+        self.checkfw = checkfirmware
+        self.addr = addr
+        self.port = port
+        self.timeout = timeout
 
         self.soc = None
-        self.macid = None
+        self.macid = macid
 
         if self.debug :
-            print "Addr :  = ", self.addr
-            print "timeout :  = ", self.timeout
-            print "debug :  = ", self.debug
-
+            print("Addr :  = ", self.addr)
+            print("timeout :  = ", self.timeout)
+            print("debug :  = ", self.debug)
 
         if self.addr is None :
-            raise AssertionError("no hostname or IP given")
+            raise ValueError("no hostname or IP given")
 
         # preload
-        if self.mac is None :
-            self.device_info = self.list_devices()
+        if not self.macid:
+            self.device_info = self.get_device_list()
             if self.device_info is None :
                 raise IOError("Error connecting")
             if self.debug :
-                print "__init__ ",
+                print("__init__ ",)
                 pprint(self.device_info)
-            # self.macid = self.device_info['DeviceInfo']['DeviceMacId']
-            if self.debug :
-                print "Init DeviceMacId = ", self.macid
+            self.macid = self.device_info['device_mac_id[0]']
+            if self.debug:
+                print("Init DeviceMacId = ", self.macid)
 
-        if self.checkfw :
+        if self.checkfw:
             mysetting = self.get_setting_data()
             dev_fw_ver = mysetting['device_fw_version']
-            if ( LooseVersion(dev_fw_ver) < LooseVersion(min_fw_ver) ) :
+            if LooseVersion(dev_fw_ver) < LooseVersion(min_fw_ver):
                 warn_message = "Warning : device firmware " \
-                        + "{0} < {1} please concideer " \
+                        + "{0} < {1} please consider " \
                         + "updating ".format(dev_fw_ver, min_fw_ver)
-                warn( warn_message, RuntimeWarning, stacklevel=3)
+                warn(warn_message, RuntimeWarning, stacklevel=3)
 
 
 
@@ -209,7 +214,7 @@ class Eagle(object) :
         """
         comm_responce = self._send_soc_comm("list_devices", MacId=macid)
         if self.debug :
-            print "comm_responce =", comm_responce
+            print("comm_responce =", comm_responce)
         if comm_responce is None:
             raise RainEagleResponseError("list_devices : Null reply")
         etree = ET.fromstring('<S>' + comm_responce + '</S>')
@@ -227,7 +232,7 @@ class Eagle(object) :
         if comm_responce is None:
             raise RainEagleResponseError("get_device_data : Null reply")
         if self.debug :
-            print comm_responce
+            print(comm_responce)
         etree = ET.fromstring('<S>' + comm_responce + '</S>')
         rv = _et2d(etree)
         return rv
@@ -411,7 +416,6 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_uploader", MacId=macid)
         return json.loads(comm_responce)
 
-
     def set_message_read(self, macid=None) :
         """
             On Success returns dict with the values :
@@ -426,7 +430,7 @@ class Eagle(object) :
         """
         id = _tohex(id)
         comm_responce = self._send_http_comm("confirm_message",
-                MacId=macid, Id=id)
+                                             MacId=macid, Id=id)
         return json.loads(comm_responce)
 
     def get_message(self, macid=None) :
@@ -446,7 +450,7 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_message", MacId=macid)
         return json.loads(comm_responce)
 
-    def get_usage_data(self, macid=None) :
+    def get_usage_data(self, macid=None):
         """
             Get current demand usage summation
 
@@ -475,8 +479,7 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_usage_data", MacId=macid)
         return json.loads(comm_responce)
 
-
-    def get_historical_data(self, macid=None, period="day") :
+    def get_historical_data(self, macid=None, period="day"):
         """
             get a series of summation values over an interval of time
             ( http command api )
@@ -521,8 +524,7 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_historical_data", macid=macid, Period=period)
         return json.loads(comm_responce)
 
-
-    def get_setting_data(self, macid=None) :
+    def get_setting_data(self, macid=None):
         """
             get settings data
 
@@ -533,7 +535,7 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_setting_data", MacId=macid)
         return json.loads(comm_responce)
 
-    def get_device_config(self, macid=None) :
+    def get_device_config(self, macid=None):
         """
             get remote management status
 
@@ -605,8 +607,7 @@ class Eagle(object) :
                     MacId=macid, Status=status)
         return json.loads(comm_responce)
 
-
-    def set_time_source(self, macid=None, source=None) :
+    def set_time_source(self, macid=None, source=None):
         """ set_time_source
             set time source
 
@@ -625,7 +626,7 @@ class Eagle(object) :
                     MacId=macid, Source=source)
         return json.loads(comm_responce)
 
-    def get_price(self, macid=None) :
+    def get_price(self, macid=None):
         """
             get price for kWh
 
@@ -640,7 +641,7 @@ class Eagle(object) :
         comm_responce = self._send_http_comm("get_price", MacId=macid)
         return json.loads(comm_responce)
 
-    def set_price(self, macid=None, price=None) :
+    def set_price(self, macid=None, price=None):
         """
             Set price manualy
 
@@ -654,7 +655,7 @@ class Eagle(object) :
         if isinstance(price, str) and price.startswith('$') :
             price = float(price.lstrip('$'))
 
-        if not isinstance(price, (int, long, float)) :
+        if not isinstance(price, (int, float)) :
             raise ValueError("set_price price arg must me a int, long or float")
         if (price <= 0):
             raise ValueError("set_price price arg greater then 0")
@@ -786,14 +787,14 @@ class Eagle(object) :
         except IOError :
             pass
 
-    def _send_http_comm(self, cmd, **kwargs):
+    def _send_http_comm(self, cmd, MacId=None, **kwargs):
 
         if self.debug :
-            print "\n\n_send_http_comm : ", cmd
+            print("\n\n_send_http_comm : ", cmd)
 
         commstr = "<LocalCommand>\n"
         commstr += "<Name>{0!s}</Name>\n".format(cmd)
-        commstr += "<MacId>{0!s}</MacId>\n".format(self.macid)
+        commstr += "<MacId>{0!s}</MacId>\n".format(MacId or self.macid)
         for k, v in kwargs.items() :
             commstr += "<{0}>{1!s}</{0}>\n".format(k, v)
         commstr += "</LocalCommand>\n"
@@ -808,17 +809,17 @@ class Eagle(object) :
         url = "http://{0}/cgi-bin/cgi_manager".format(self.addr)
 
         if self.username is not None :
-            if self.debug :
-                print("Authorization string: "+ base64.b64encode(self.username+":"+self.password))
-            req = urllib2.Request(url, commstr, headers={ "Authorization" : 'Basic ' + base64.b64encode(self.username+":"+self.password) })
+            auth = base64.b64encode((self.username+":"+self.password).encode())
+            #auth = self.username+":"+self.password
+            if self.debug:
+                print("Authorization string: {}".format(auth))
+            req = Request(url, commstr.encode(), headers={"Authorization": 'Basic '.encode() + auth })
         else :
-            req = urllib2.Request(url, commstr)
-        response = urllib2.urlopen(req)
+            req = Request(url, commstr)
+        response = urlopen(req)
         the_page = response.read()
 
-        return the_page
-
-
+        return the_page.decode()
 
     def _send_soc_comm(self, cmd, **kwargs):
 
@@ -841,9 +842,9 @@ class Eagle(object) :
 
             # if cmd == "get_history_data" :
         #       self.soc.settimeout(45)
-            self.soc.sendall(commstr)
             if self.debug :
-                print "commstr : \n", commstr
+                print("commstr : \n", commstr)
+            self.soc.sendall(commstr)
 
             # time.sleep(1)
 
@@ -857,12 +858,12 @@ class Eagle(object) :
 
         except Exception:
             print("Unexpected error:", sys.exc_info()[0])
-            print "Error replystr = ", replystr
+            print("Error replystr = ", replystr)
             replystr = None
         finally:
             self._disconnect()
             if self.debug > 1 :
-                print "_send_soc_comm replystr :\n", replystr
+                print("_send_soc_comm replystr :\n", replystr)
             return replystr
 
 
